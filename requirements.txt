@@ -2,13 +2,9 @@ discord.py
 opencv-python
 pyautogui
 requests
-pywin32
 pillow
 pynput
 psutil
-scapy
-urllib3
-colorama
-sounddevice
 numpy
+sounddevice
 browser-cookie3
